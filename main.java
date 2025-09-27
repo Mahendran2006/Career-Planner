@@ -1,223 +1,357 @@
-import java.util.Scanner;
-import java.util.ArrayList;
-import java.util.InputMismatchException; // for input errors
-import java.io.FileWriter; // for writing resume to file
-import java.io.IOException; // for handling file errors
+import javax.swing.*;
+import javax.swing.table.DefaultTableModel;
+import java.awt.*;
+import java.io.File;
+import javax.sound.sampled.*;
+import java.util.Timer;
+import java.util.TimerTask;
 
-class Goal {
-    String goal;
-    String endtime;
-    ArrayList<String> steps = new ArrayList<>(); // for storing the subgoals
-}
+public class GoalTrackerApp extends JFrame {
 
-class Skills {
-    ArrayList<String> completedSubgoals = new ArrayList<>(); // completed subgoals
-    ArrayList<String> incompleteSubgoals = new ArrayList<>(); // incompleted subgoals
-    ArrayList<String> completedGoals = new ArrayList<>(); // completed main goals
-    ArrayList<String> incompleteGoals = new ArrayList<>(); // incompleted main goals
-}
+    private JTable timetableTable;
+    private JLabel timerLabel;
+    private Timer timer;
+    private DefaultTableModel tableModel;
 
-class Resume {
-    String name;
-    String email;
-    String phone;
-    String education;
-    String experience;
-}
+    // User-selected alarm sound file
+    private File alarmSoundFile = new File("alarm.wav"); // default
 
-public class Main {
-    public static void main(String args[]) {
-        Scanner s = new Scanner(System.in);
+    // ---------------- LOGIN CREDENTIALS ----------------
+    private static final String USERNAME = "admin";
+    private static final String PASSWORD = "1234";
 
-        ArrayList<Goal> goals = new ArrayList<>(); // for storing main goals
-        Skills sk = new Skills(); // object for storing completed/incompleted goals & subgoals
+    public GoalTrackerApp() {
+        // ---------------- LOGIN ----------------
+        if (!showLoginDialog()) {
+            System.exit(0); // close app if login fails
+        }
 
-        while (true) {
-            try {
-                // Menu options
-                System.out.println("\n=== MENU ===");
-                System.out.println("1. Add Goals");
-                System.out.println("2. Display All Goals and Subgoals");
-                System.out.println("3. Mark Subgoals as Completed/Not Completed");
-                System.out.println("4. Display Completed Goals");
-                System.out.println("5. Display Incompleted Goals");
-                System.out.println("6. Create Resume");
-                System.out.println("7. Exit");
-                System.out.print("Enter choice: ");
+        setTitle("Goal Tracker App");
+        setSize(950, 700);
+        setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
+        setLayout(new BorderLayout());
+        getContentPane().setBackground(Color.BLACK);
 
-                int choice = s.nextInt();
-                s.nextLine();
+        // ---------------- MENU BAR ----------------
+        JMenuBar menuBar = new JMenuBar();
+        menuBar.setBackground(Color.BLACK);
+        menuBar.setBorder(BorderFactory.createLineBorder(Color.GREEN));
 
-                switch (choice) {
-                    case 1: // adding main goals
-                        try {
-                            System.out.print("Enter number of goals: ");
-                            int noGoals = s.nextInt();
-                            s.nextLine();
+        JMenu menu = new JMenu("📋 Menu"); // Added emoji
+        menu.setForeground(Color.GREEN);
 
-                            // loop for main goals
-                            for (int i = 0; i < noGoals; i++) {
-                                Goal g = new Goal();
-                                System.out.print("Enter goal " + (i + 1) + ": ");
-                                g.goal = s.nextLine();
+        JMenuItem addGoalItem = new JMenuItem("Add New Goal");
+        addGoalItem.addActionListener(e -> addNewGoal());
+        menu.add(addGoalItem);
 
-                                System.out.print("Enter end time: ");
-                                g.endtime = s.nextLine();
+        JMenuItem addTimerItem = new JMenuItem("Add Timer");
+        addTimerItem.addActionListener(e -> addCustomTimer());
+        menu.add(addTimerItem);
 
-                                System.out.print("Enter number of subgoals: ");
-                                int noSteps = s.nextInt();
-                                s.nextLine();
+        JMenuItem editTableItem = new JMenuItem("Edit Timetable");
+        editTableItem.addActionListener(e -> editTimetable());
+        menu.add(editTableItem);
 
-                                // loop for subgoals
-                                for (int j = 0; j < noSteps; j++) {
-                                    System.out.print("Enter subgoal " + (j + 1) + ": ");
-                                    g.steps.add(s.nextLine());
-                                }
-                                goals.add(g); // add goal into goals arraylist
-                            }
-                        } catch (InputMismatchException e) {
-                            System.out.println("⚠ Error: Please enter numbers only for counts!");
-                            s.nextLine(); // clear wrong input
-                        }
-                        break;
+        JMenuItem setSoundItem = new JMenuItem("Set Alarm Sound");
+        setSoundItem.addActionListener(e -> chooseAlarmSound());
+        menu.add(setSoundItem);
 
-                    case 2: // displaying all main goals and their subgoals
-                        if (goals.isEmpty()) {
-                            System.out.println("⚠ No goals available. Add some first.");
-                        } else {
-                            System.out.println("\n=== Goals and Subgoals ===");
-                            for (int i = 0; i < goals.size(); i++) { // loop for main goals
-                                Goal g = goals.get(i);
-                                System.out.println((i + 1) + ". " + g.goal + " (End time: " + g.endtime + ")");
-                                for (int j = 0; j < g.steps.size(); j++) { // loop for subgoals
-                                    System.out.println("   - " + g.steps.get(j)); // printing subgoals
-                                }
-                            }
-                        }
-                        break;
+        JMenuItem exitItem = new JMenuItem("Exit");
+        exitItem.addActionListener(e -> System.exit(0));
+        menu.add(exitItem);
 
-                    case 3: // marking subgoals as completed/not completed
-                        if (goals.isEmpty()) {
-                            System.out.println("⚠ No goals to mark. Add goals first.");
-                        } else {
-                            for (int i = 0; i < goals.size(); i++) { // loop for main goals
-                                Goal g = goals.get(i);
-                                boolean allCompleted = true; // flag for checking if all subgoals are completed
+        menuBar.add(menu);
+        setJMenuBar(menuBar);
 
-                                System.out.println("\nMarking subgoals for: " + g.goal);
-                                for (int j = 0; j < g.steps.size(); j++) { // loop for subgoals
-                                    try {
-                                        System.out.print("Is subgoal '" + g.steps.get(j) + "' completed? (true/false): ");
-                                        boolean completed = s.nextBoolean();
+        // ---------------- TIMETABLE ----------------
+        String[] columns = {"Time", "Activity", "Completed"};
+        Object[][] data = {
+                {"8AM", "Study", false},
+                {"12PM", "Lunch", false},
+                {"3PM", "Work", false},
+                {"7PM", "Exercise", false},
+                {"10PM", "Sleep", false}
+        };
 
-                                        if (completed) {
-                                            sk.completedSubgoals.add(g.steps.get(j)); // add to completed subgoals
-                                        } else {
-                                            sk.incompleteSubgoals.add(g.steps.get(j)); // add to incompleted subgoals
-                                            allCompleted = false; // at least one subgoal is not completed
-                                        }
-                                    } catch (InputMismatchException e) {
-                                        System.out.println("⚠ Error: Enter only true or false.");
-                                        s.nextLine(); // clear buffer
-                                        j--; // repeat same subgoal
-                                    }
-                                }
+        tableModel = new DefaultTableModel(data, columns) {
+            @Override
+            public Class<?> getColumnClass(int columnIndex) {
+                if (columnIndex == 2) return Boolean.class;
+                return String.class;
+            }
 
-                                // check if all subgoals completed → add goal to completed goals
-                                if (allCompleted) {
-                                    sk.completedGoals.add(g.goal);
-                                } else {
-                                    sk.incompleteGoals.add(g.goal); // otherwise add goal to incomplete goals
-                                }
-                            }
-                        }
-                        break;
+            @Override
+            public boolean isCellEditable(int row, int column) {
+                return column == 2; // only Completed column editable directly
+            }
+        };
 
-                    case 4: // displaying completed goals
-                        if (sk.completedGoals.isEmpty()) {
-                            System.out.println("⚠ No completed goals yet.");
-                        } else {
-                            System.out.println("\n✅ Completed Goals:");
-                            for (int i = 0; i < sk.completedGoals.size(); i++) { // loop for completed goals
-                                System.out.println("- " + sk.completedGoals.get(i));
-                            }
-                        }
-                        break;
+        timetableTable = new JTable(tableModel);
+        timetableTable.setBackground(Color.BLACK);
+        timetableTable.setForeground(Color.GREEN);
+        timetableTable.setGridColor(Color.GREEN);
+        timetableTable.setRowHeight(35);
+        timetableTable.getTableHeader().setBackground(Color.BLACK);
+        timetableTable.getTableHeader().setForeground(Color.GREEN);
 
-                    case 5: // displaying incompleted goals
-                        if (sk.incompleteGoals.isEmpty()) {
-                            System.out.println("⚠ No incompleted goals.");
-                        } else {
-                            System.out.println("\n❌ Incompleted Goals:");
-                            for (int i = 0; i < sk.incompleteGoals.size(); i++) { // loop for incompleted goals
-                                System.out.println("- " + sk.incompleteGoals.get(i));
-                            }
-                        }
-                        break;
+        JScrollPane timetableScroll = new JScrollPane(timetableTable);
+        timetableScroll.getViewport().setBackground(Color.BLACK);
+        timetableScroll.setBorder(BorderFactory.createLineBorder(Color.GREEN));
 
-                    case 6: // creating resume
-                        try {
-                            Resume r = new Resume();
-                            System.out.print("Enter your name: ");
-                            r.name = s.nextLine();
+        JPanel centerPanel = new JPanel(new GridBagLayout());
+        centerPanel.setBackground(Color.BLACK);
+        centerPanel.add(timetableScroll);
+        add(centerPanel, BorderLayout.CENTER);
 
-                            System.out.print("Enter your email: ");
-                            r.email = s.nextLine();
+        // ---------------- TIMER PANEL ----------------
+        JPanel timerPanel = new JPanel();
+        timerPanel.setBackground(Color.BLACK);
 
-                            System.out.print("Enter your phone number: ");
-                            r.phone = s.nextLine();
+        timerLabel = new JLabel("Timer: 00:00");
+        timerLabel.setForeground(Color.GREEN);
+        timerPanel.add(timerLabel);
 
-                            System.out.print("Enter your education: ");
-                            r.education = s.nextLine();
+        JButton startBtn = new JButton("Start Timer");
+        JButton stopBtn = new JButton("Stop Timer");
+        styleButton(startBtn);
+        styleButton(stopBtn);
 
-                            System.out.print("Enter your work experience: ");
-                            r.experience = s.nextLine();
+        timerPanel.add(startBtn);
+        timerPanel.add(stopBtn);
+        add(timerPanel, BorderLayout.SOUTH);
 
-                            // writing resume to file
-                            FileWriter fw = new FileWriter("resume.txt");
-                            fw.write("===== RESUME =====\n");
-                            fw.write("Name: " + r.name + "\n");
-                            fw.write("Email: " + r.email + "\n");
-                            fw.write("Phone: " + r.phone + "\n");
-                            fw.write("Education: " + r.education + "\n");
-                            fw.write("Experience: " + r.experience + "\n");
+        startBtn.addActionListener(e -> startTimer());
+        stopBtn.addActionListener(e -> stopTimer());
 
-                            // asking user if they want to add skills
-                            System.out.print("Would you like to add the skills you have learned? (yes/no): ");
-                            String addSkills = s.nextLine();
+        // ---------------- ALARMS ----------------
+        checkAlarms();
 
-                            if (addSkills.equalsIgnoreCase("yes")) {
-                                fw.write("\nSkills Learned:\n");
+        setVisible(true);
+    }
 
-                                // loop for completed goals
-                                for (int i = 0; i < sk.completedGoals.size(); i++) {
-                                    fw.write("- " + sk.completedGoals.get(i) + "\n");
-                                }
+    // ---------------- LOGIN DIALOG ----------------
+    private boolean showLoginDialog() {
+        JPanel panel = new JPanel(new GridLayout(2, 2));
+        JTextField usernameField = new JTextField();
+        JPasswordField passwordField = new JPasswordField();
 
-                                // loop for completed subgoals
-                                for (int j = 0; j < sk.completedSubgoals.size(); j++) {
-                                    fw.write("- " + sk.completedSubgoals.get(j) + "\n");
-                                }
-                            }
+        panel.add(new JLabel("Username:"));
+        panel.add(usernameField);
+        panel.add(new JLabel("Password:"));
+        panel.add(passwordField);
 
-                            fw.close(); // closing file writer
-                            System.out.println("✅ Resume created successfully in 'resume.txt'.");
-                        } catch (IOException e) {
-                            System.out.println("⚠ Error writing resume file: " + e.getMessage());
-                        }
-                        break;
+        int option = JOptionPane.showConfirmDialog(null, panel,
+                "Login", JOptionPane.OK_CANCEL_OPTION, JOptionPane.PLAIN_MESSAGE);
 
-                    case 7: // exit
-                        System.out.println("Exiting program...");
-                        return;
+        if (option == JOptionPane.OK_OPTION) {
+            String enteredUsername = usernameField.getText().trim();
+            String enteredPassword = new String(passwordField.getPassword()).trim();
+            return USERNAME.equals(enteredUsername) && PASSWORD.equals(enteredPassword);
+        }
+        return false;
+    }
 
-                    default: // invalid menu choice
-                        System.out.println("Invalid choice. Try again.");
-                }
-            } catch (InputMismatchException e) {
-                System.out.println("⚠ Error: Please enter only numbers for menu choice!");
-                s.nextLine(); // clear wrong input
+    // ---------------- STYLE BUTTON ----------------
+    private void styleButton(JButton button) {
+        button.setBackground(new Color(0, 102, 204));
+        button.setForeground(Color.WHITE);
+        button.setFocusPainted(false);
+        button.setBorder(BorderFactory.createLineBorder(Color.GREEN, 2));
+        button.setPreferredSize(new Dimension(120, 35));
+    }
+
+    // ---------------- ADD NEW GOAL ----------------
+    private void addNewGoal() {
+        JTextField timeField = new JTextField();
+        JTextField activityField = new JTextField();
+
+        Object[] message = {
+                "Enter Time (e.g., 2PM):", timeField,
+                "Enter Activity:", activityField
+        };
+
+        int option = JOptionPane.showConfirmDialog(this, message, "Add New Goal", JOptionPane.OK_CANCEL_OPTION);
+
+        if (option == JOptionPane.OK_OPTION) {
+            String time = timeField.getText().trim();
+            String activity = activityField.getText().trim();
+
+            if (!time.isEmpty() && !activity.isEmpty()) {
+                tableModel.addRow(new Object[]{time, activity, false});
+            } else {
+                JOptionPane.showMessageDialog(this, "Both time and activity are required.", "Error", JOptionPane.ERROR_MESSAGE);
             }
         }
     }
+
+    // ---------------- EDIT TIMETABLE ----------------
+    private void editTimetable() {
+        int selectedRow = timetableTable.getSelectedRow();
+        if (selectedRow == -1) {
+            JOptionPane.showMessageDialog(this, "Select a timetable entry to edit.");
+            return;
+        }
+
+        String currentTime = tableModel.getValueAt(selectedRow, 0).toString();
+        String currentActivity = tableModel.getValueAt(selectedRow, 1).toString();
+
+        JTextField timeField = new JTextField(currentTime);
+        JTextField activityField = new JTextField(currentActivity);
+
+        Object[] message = {
+                "Time:", timeField,
+                "Activity:", activityField
+        };
+
+        int option = JOptionPane.showConfirmDialog(this, message, "Edit Timetable", JOptionPane.OK_CANCEL_OPTION);
+        if (option == JOptionPane.OK_OPTION) {
+            String newTime = timeField.getText().trim();
+            String newActivity = activityField.getText().trim();
+
+            if (!newTime.isEmpty() && !newActivity.isEmpty()) {
+                tableModel.setValueAt(newTime, selectedRow, 0);
+                tableModel.setValueAt(newActivity, selectedRow, 1);
+            } else {
+                JOptionPane.showMessageDialog(this, "Both time and activity are required.", "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+
+    // ---------------- ADD CUSTOM TIMER ----------------
+    private void addCustomTimer() {
+        JTextField minutesField = new JTextField();
+        JTextField secondsField = new JTextField();
+
+        Object[] message = {
+                "Minutes:", minutesField,
+                "Seconds:", secondsField
+        };
+
+        int option = JOptionPane.showConfirmDialog(this, message, "Add Timer", JOptionPane.OK_CANCEL_OPTION);
+
+        if (option == JOptionPane.OK_OPTION) {
+            try {
+                int minutes = Integer.parseInt(minutesField.getText().trim());
+                int seconds = Integer.parseInt(secondsField.getText().trim());
+                int totalSeconds = minutes * 60 + seconds;
+
+                if (totalSeconds > 0) {
+                    startCountdown(totalSeconds);
+                } else {
+                    JOptionPane.showMessageDialog(this, "Enter a valid time!", "Error", JOptionPane.ERROR_MESSAGE);
+                }
+            } catch (NumberFormatException ex) {
+                JOptionPane.showMessageDialog(this, "Invalid number format!", "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+
+    // ---------------- COUNTDOWN TIMER ----------------
+    private void startCountdown(int timeLeft) {
+        final int[] remaining = {timeLeft};
+        new Thread(() -> {
+            try {
+                while (remaining[0] > 0) {
+                    int min = remaining[0] / 60;
+                    int sec = remaining[0] % 60;
+                    SwingUtilities.invokeLater(() ->
+                            timerLabel.setText(String.format("Timer: %02d:%02d", min, sec))
+                    );
+                    Thread.sleep(1000);
+                    remaining[0]--;
+                }
+                SwingUtilities.invokeLater(() -> showAlarmDialog("⏰ Custom Timer Finished!"));
+            } catch (InterruptedException ignored) {}
+        }).start();
+    }
+
+    private void showAlarmDialog(String message) {
+        try {
+            AudioInputStream audioStream = AudioSystem.getAudioInputStream(alarmSoundFile);
+            Clip clip = AudioSystem.getClip();
+            clip.open(audioStream);
+            clip.loop(Clip.LOOP_CONTINUOUSLY);
+
+            JOptionPane.showMessageDialog(this, message);
+
+            clip.stop();
+            clip.close();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    // ---------------- TIMER FUNCTIONS ----------------
+    private void startTimer() {
+        stopTimer();
+        final int[] secondsPassedArr = {0};
+        timer = new Timer();
+        timer.scheduleAtFixedRate(new TimerTask() {
+            public void run() {
+                secondsPassedArr[0]++;
+                int minutes = secondsPassedArr[0] / 60;
+                int seconds = secondsPassedArr[0] % 60;
+                SwingUtilities.invokeLater(() ->
+                        timerLabel.setText(String.format("Timer: %02d:%02d", minutes, seconds))
+                );
+            }
+        }, 1000, 1000);
+    }
+
+    private void stopTimer() {
+        if (timer != null) {
+            timer.cancel();
+        }
+    }
+
+    // ---------------- ALARMS ----------------
+    private void checkAlarms() {
+        Timer alarmTimer = new Timer();
+        alarmTimer.scheduleAtFixedRate(new TimerTask() {
+            public void run() {
+                String currentTime = java.time.LocalTime.now().withSecond(0).withNano(0).toString();
+                for (int i = 0; i < timetableTable.getRowCount(); i++) {
+                    final int row = i;
+                    String time = timetableTable.getValueAt(row, 0).toString();
+                    boolean completed = (boolean) timetableTable.getValueAt(row, 2);
+                    if (convertTo24Hour(time).equals(currentTime) && !completed) {
+                        SwingUtilities.invokeLater(() -> showAlarmDialog("Reminder: " + timetableTable.getValueAt(row, 1)));
+                        tableModel.setValueAt(true, row, 2); // mark as completed
+                    }
+                }
+            }
+        }, 0, 60000);
+    }
+
+    // ---------------- TIME CONVERTER ----------------
+    private String convertTo24Hour(String time) {
+        switch (time.toUpperCase()) {
+            case "8AM": return "08:00";
+            case "12PM": return "12:00";
+            case "3PM": return "15:00";
+            case "7PM": return "19:00";
+            case "10PM": return "22:00";
+        }
+        return "00:00";
+    }
+
+    // ---------------- SET CUSTOM SOUND ----------------
+    private void chooseAlarmSound() {
+        JFileChooser chooser = new JFileChooser();
+        int result = chooser.showOpenDialog(this);
+        if (result == JFileChooser.APPROVE_OPTION) {
+            File selectedFile = chooser.getSelectedFile();
+            if (selectedFile.exists() && selectedFile.getName().endsWith(".wav")) {
+                alarmSoundFile = selectedFile;
+                JOptionPane.showMessageDialog(this, "Alarm sound set to: " + selectedFile.getName());
+            } else {
+                JOptionPane.showMessageDialog(this, "Please select a valid .wav file!", "Error", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+
+    public static void main(String[] args) {
+        SwingUtilities.invokeLater(GoalTrackerApp::new);
+    }
 }
+
